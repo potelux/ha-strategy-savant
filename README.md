@@ -6,6 +6,11 @@ Pairs with the [Savant theme](https://github.com/YOUR_USERNAME/savant-ha-theme) 
 
 ---
 
+## Requirements
+
+- Home Assistant **2026.5 or later** (for UI discovery via the New Dashboard dialog)
+- Strategy functionality itself works from HA 2021.5+, but the strategy won't appear in the add-dashboard picker on older versions
+
 ## What it generates
 
 **Home view** — greeting, scene pills, and a live area grid showing active lights, media state, and temperature per room.
@@ -56,14 +61,14 @@ Copy `dist/savant-strategy.js` to `config/www/savant-strategy.js`.
 
 ```yaml
 strategy:
-  type: custom:savant-dashboard-strategy
+  type: custom:savant
 ```
 
 ### Full config options
 
 ```yaml
 strategy:
-  type: custom:savant-dashboard-strategy
+  type: custom:savant
 
   # Scene pill labels shown on the home view
   scenes:

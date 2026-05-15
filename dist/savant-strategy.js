@@ -3,7 +3,8 @@
  * Mirrors the Savant luxury home-automation UI aesthetic.
  *
  * Install: Add dist/savant-strategy.js as a Lovelace resource (type: module)
- * Usage:   Set your dashboard strategy to  custom:savant-dashboard-strategy
+ * Usage:   New dashboard → Community dashboards → Savant
+ *          — or — set dashboard YAML strategy: { type: custom:savant }
  *
  * Pairs with the Savant theme for best results.
  * https://github.com/YOUR_USERNAME/savant-ha-strategy
@@ -19,8 +20,7 @@ const DOMAIN_LABELS = {
   lock:          'Security',
   switch:        'Switches',
   fan:           'Fans',
-  // binary_sensor + sensor are intentionally absent from DOMAIN_ORDER;
-  // they are merged into a single "Sensors" section at the end of each view.
+  // binary_sensor + sensor are merged into one "Sensors" section (see below)
   camera:        'Cameras',
   input_boolean: 'Switches',
   input_number:  'Controls',
@@ -65,9 +65,6 @@ const getAreaEntities = (areaId, entityReg, deviceReg) => {
 };
 
 // ─── SavantHomeCard ───────────────────────────────────────────────────────────
-//
-// Full-width overview card: greeting, scene pills, per-area room tiles,
-// optional environment strip. Uses Shadow DOM for style encapsulation.
 
 const HOME_CSS = `
   :host {
@@ -78,7 +75,6 @@ const HOME_CSS = `
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
-  /* ── Header ── */
   .sv-header {
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 22px; gap: 12px;
@@ -98,7 +94,6 @@ const HOME_CSS = `
     white-space: nowrap; flex-shrink: 0;
   }
 
-  /* ── Scene pills ── */
   .sv-scenes { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px; }
   .sv-scene-pill {
     background: var(--table-row-alternative-background-color, #1D1D22);
@@ -114,19 +109,16 @@ const HOME_CSS = `
     color: var(--primary-color);
   }
 
-  /* ── Section label ── */
   .sv-label {
     font-size: 10px; font-weight: 300; text-transform: uppercase;
     letter-spacing: 0.1em; color: var(--secondary-text-color);
     margin-bottom: 12px; opacity: 0.65;
   }
 
-  /* ── Area grid ── */
   .sv-area-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-    gap: 10px;
-    margin-bottom: 20px;
+    gap: 10px; margin-bottom: 20px;
   }
   @media (max-width: 500px) {
     .sv-area-grid { grid-template-columns: 1fr 1fr; }
@@ -135,8 +127,7 @@ const HOME_CSS = `
     background: var(--card-background-color);
     border: 1px solid var(--ha-card-border-color, rgba(255,255,255,0.05));
     border-radius: var(--ha-card-border-radius, 16px);
-    padding: 15px 13px 13px;
-    min-height: 100px;
+    padding: 15px 13px 13px; min-height: 100px;
     display: flex; flex-direction: column; justify-content: space-between;
     cursor: pointer; text-decoration: none;
     transition: border-color 0.15s;
@@ -154,8 +145,7 @@ const HOME_CSS = `
   .sv-area-meta { display: flex; flex-direction: column; gap: 5px; }
   .sv-area-stat {
     display: flex; align-items: center; gap: 6px;
-    font-size: 11px; font-weight: 300; color: var(--secondary-text-color);
-    line-height: 1;
+    font-size: 11px; font-weight: 300; color: var(--secondary-text-color); line-height: 1;
   }
   .sv-area-stat.lit   { color: var(--primary-color); }
   .sv-area-stat.media { color: var(--info-color, #6EB6C9); }
@@ -171,20 +161,17 @@ const HOME_CSS = `
   }
   .sv-area-temp sup { font-size: 11px; font-weight: 300; vertical-align: super; }
 
-  /* ── Environment strip ── */
   .sv-strip { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .sv-strip-card {
     background: var(--card-background-color);
     border: 1px solid var(--ha-card-border-color, rgba(255,255,255,0.05));
     border-radius: var(--ha-card-border-radius, 16px);
-    padding: 14px 14px 12px;
-    display: flex; align-items: center; gap: 12px;
+    padding: 14px 14px 12px; display: flex; align-items: center; gap: 12px;
   }
   .sv-strip-icon { font-size: 20px; flex-shrink: 0; }
   .sv-strip-body { flex: 1; min-width: 0; }
   .sv-strip-label {
-    font-size: 11px; font-weight: 300; color: var(--secondary-text-color);
-    letter-spacing: 0.02em;
+    font-size: 11px; font-weight: 300; color: var(--secondary-text-color); letter-spacing: 0.02em;
   }
   .sv-strip-value {
     font-size: 22px; font-weight: 200; color: var(--primary-text-color);
@@ -193,8 +180,7 @@ const HOME_CSS = `
   .sv-strip-value sup { font-size: 11px; vertical-align: super; }
   .sv-strip-badge {
     background: var(--ha-chip-background-color, rgba(201,169,110,0.1));
-    border: 1px solid rgba(201,169,110,0.2);
-    border-radius: 6px; padding: 3px 8px;
+    border: 1px solid rgba(201,169,110,0.2); border-radius: 6px; padding: 3px 8px;
     font-size: 10px; font-weight: 300; color: var(--primary-color);
     white-space: nowrap; letter-spacing: 0.04em; flex-shrink: 0;
   }
@@ -214,12 +200,8 @@ class SavantHomeCard extends HTMLElement {
     this._prevSig = null;
   }
 
-  // ── HA card API ─────────────────────────────────────────────────────────────
-
   set hass(hass) {
     this._hass = hass;
-    // Only re-render when the states we actually display have changed.
-    // This avoids a full innerHTML rebuild on every unrelated entity update.
     const sig = this._stateSig(hass);
     if (sig !== this._prevSig) {
       this._prevSig = sig;
@@ -229,7 +211,7 @@ class SavantHomeCard extends HTMLElement {
 
   setConfig(config) {
     this._config  = config;
-    this._prevSig = null; // invalidate so next hass set forces a full render
+    this._prevSig = null;
   }
 
   getCardSize() { return 6; }
@@ -239,22 +221,12 @@ class SavantHomeCard extends HTMLElement {
     if (this._hass && this._config) this._render();
   }
 
-  disconnectedCallback() {
-    clearInterval(this._tickId);
-  }
+  disconnectedCallback() { clearInterval(this._tickId); }
 
-  // ── Internals ────────────────────────────────────────────────────────────────
-
-  /**
-   * A compact signature of every state value shown in the home card.
-   * Comparing old vs new signatures lets us skip renders when only
-   * unrelated entities have changed.
-   */
   _stateSig(hass) {
     if (!this._config?.areas) return '';
-    return this._config.areas.flatMap(area => {
-      const entities = this._config.entityMap?.[area.area_id] ?? [];
-      return entities.map(e => {
+    return this._config.areas.flatMap(area =>
+      (this._config.entityMap?.[area.area_id] ?? []).map(e => {
         const s = hass.states[e.entity_id];
         if (!s) return `${e.entity_id}:null`;
         const d = getDomain(e.entity_id);
@@ -264,8 +236,8 @@ class SavantHomeCard extends HTMLElement {
         if (d === 'sensor' && s.attributes.device_class === 'temperature')
           return `${e.entity_id}:${s.state}`;
         return '';
-      });
-    }).join('|');
+      })
+    ).join('|');
   }
 
   _tickTime() {
@@ -286,95 +258,56 @@ class SavantHomeCard extends HTMLElement {
     return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
   }
 
-  /**
-   * Summarise a single area for its tile.
-   * Counts active lights, active media players, and reads temperature
-   * from a climate entity OR a temperature-class sensor — whichever is found first.
-   */
   _areaSummary(area) {
     const entities = this._config.entityMap?.[area.area_id] ?? [];
     let activeLights = 0, totalLights = 0, mediaActive = 0, temp = null;
-
     for (const e of entities) {
-      const state  = this._hass.states[e.entity_id];
+      const state = this._hass.states[e.entity_id];
       if (!state) continue;
-      const domain = getDomain(e.entity_id);
-
-      if (domain === 'light') {
-        totalLights++;
-        if (state.state === 'on') activeLights++;
-      }
-      if (domain === 'climate' && temp === null) {
+      const d = getDomain(e.entity_id);
+      if (d === 'light') { totalLights++; if (state.state === 'on') activeLights++; }
+      if (d === 'climate' && temp === null)
         temp = state.attributes.current_temperature ?? null;
-      }
-      if (
-        domain === 'sensor' &&
-        state.attributes.device_class === 'temperature' &&
-        temp === null
-      ) {
+      if (d === 'sensor' && state.attributes.device_class === 'temperature' && temp === null) {
         const n = parseFloat(state.state);
         if (!isNaN(n)) temp = n;
       }
-      if (
-        domain === 'media_player' &&
-        !['off', 'idle', 'standby', 'unavailable'].includes(state.state)
-      ) {
+      if (d === 'media_player' && !['off','idle','standby','unavailable'].includes(state.state))
         mediaActive++;
-      }
     }
-
     return { activeLights, totalLights, mediaActive, temp };
   }
 
   _render() {
     if (!this._config || !this._hass) return;
-
-    const {
-      areas = [],
-      scenes,
-      indoor_temp_entity,
-      outdoor_temp_entity,
-    } = this._config;
-
+    const { areas = [], scenes, indoor_temp_entity, outdoor_temp_entity } = this._config;
     const sceneNames = scenes ?? ['Morning', 'Day', 'Evening', 'Away', 'Sleep', 'Cinema'];
 
-    // ── Area tiles ────────────────────────────────────────────────────────────
     const areaTilesHtml = areas.map(area => {
       const { activeLights, totalLights, mediaActive, temp } = this._areaSummary(area);
       const isActive  = activeLights > 0 || mediaActive > 0;
       const showEmpty = totalLights === 0 && mediaActive === 0 && temp == null;
-
       return `
-        <a class="sv-area-tile${isActive ? ' active' : ''}"
-           href="/lovelace/${area.area_id}">
+        <a class="sv-area-tile${isActive ? ' active' : ''}" href="/lovelace/${area.area_id}">
           <div class="sv-area-name">${area.name}</div>
           <div class="sv-area-meta">
             ${totalLights > 0 ? `
               <div class="sv-area-stat ${activeLights > 0 ? 'lit' : ''}">
                 <div class="sv-dot ${activeLights > 0 ? 'lit' : ''}"></div>
-                ${activeLights > 0
-                  ? `${activeLights} light${activeLights !== 1 ? 's' : ''}`
-                  : 'Lights off'}
+                ${activeLights > 0 ? `${activeLights} light${activeLights !== 1 ? 's' : ''}` : 'Lights off'}
               </div>` : ''}
             ${mediaActive > 0 ? `
               <div class="sv-area-stat media">
-                <div class="sv-dot media"></div>
-                Playing
+                <div class="sv-dot media"></div>Playing
               </div>` : ''}
-            ${temp != null
-              ? `<div class="sv-area-temp">${Math.round(temp)}<sup>°</sup></div>`
-              : ''}
-            ${showEmpty
-              ? `<div class="sv-area-stat" style="opacity:.4;">No entities</div>`
-              : ''}
+            ${temp != null ? `<div class="sv-area-temp">${Math.round(temp)}<sup>°</sup></div>` : ''}
+            ${showEmpty ? `<div class="sv-area-stat" style="opacity:.4;">No entities</div>` : ''}
           </div>
         </a>`;
     }).join('');
 
-    // ── Environment strip ─────────────────────────────────────────────────────
     const indoorState  = indoor_temp_entity  ? this._hass.states[indoor_temp_entity]  : null;
     const outdoorState = outdoor_temp_entity ? this._hass.states[outdoor_temp_entity] : null;
-
     const envHtml = (indoorState || outdoorState) ? `
       <div class="sv-label" style="margin-top:24px;">Environment</div>
       <div class="sv-strip">
@@ -383,42 +316,30 @@ class SavantHomeCard extends HTMLElement {
             <div class="sv-strip-icon">🏠</div>
             <div class="sv-strip-body">
               <div class="sv-strip-label">Inside</div>
-              <div class="sv-strip-value">
-                ${Math.round(parseFloat(indoorState.state))}<sup>°</sup>
-              </div>
+              <div class="sv-strip-value">${Math.round(parseFloat(indoorState.state))}<sup>°</sup></div>
             </div>
-            <div class="sv-strip-badge">
-              ${indoorState.attributes.hvac_action ?? indoorState.state}
-            </div>
+            <div class="sv-strip-badge">${indoorState.attributes.hvac_action ?? indoorState.state}</div>
           </div>` : ''}
         ${outdoorState ? `
           <div class="sv-strip-card">
             <div class="sv-strip-icon">🌤</div>
             <div class="sv-strip-body">
               <div class="sv-strip-label">Outside</div>
-              <div class="sv-strip-value">
-                ${Math.round(parseFloat(outdoorState.state))}<sup>°</sup>
-              </div>
+              <div class="sv-strip-value">${Math.round(parseFloat(outdoorState.state))}<sup>°</sup></div>
             </div>
-            <div class="sv-strip-badge cool">
-              ${outdoorState.attributes.friendly_name ?? 'Outdoor'}
-            </div>
+            <div class="sv-strip-badge cool">${outdoorState.attributes.friendly_name ?? 'Outdoor'}</div>
           </div>` : ''}
       </div>` : '';
 
-    // ── Assemble ──────────────────────────────────────────────────────────────
     this._shadow.innerHTML = `
       <style>${HOME_CSS}</style>
-
       <div class="sv-header">
         <div class="sv-greeting">${this._greeting()}, <em>Home</em></div>
         <div class="sv-time-pill">${this._formatDateTime()}</div>
       </div>
-
       <div class="sv-scenes">
         ${sceneNames.map(s => `<div class="sv-scene-pill">${s}</div>`).join('')}
       </div>
-
       ${areas.length > 0 ? `
         <div class="sv-label">Rooms</div>
         <div class="sv-area-grid">${areaTilesHtml}</div>
@@ -427,16 +348,12 @@ class SavantHomeCard extends HTMLElement {
           No areas found. Create areas in
           <strong style="color:var(--primary-text-color);font-weight:400;">Settings → Areas</strong>
           and assign devices to them.
-        </p>
-      `}
-
+        </p>`}
       ${envHtml}
     `;
 
-    // Wire scene pill taps after innerHTML is settled
     this._shadow.querySelectorAll('.sv-scene-pill').forEach(pill => {
-      const name     = pill.textContent.trim();
-      const entityId = (this._config.scene_entities ?? {})[name];
+      const entityId = (this._config.scene_entities ?? {})[pill.textContent.trim()];
       if (entityId) {
         pill.addEventListener('click', () =>
           this._hass.callService('scene', 'turn_on', { entity_id: entityId })
@@ -447,45 +364,31 @@ class SavantHomeCard extends HTMLElement {
 }
 
 // ─── SavantSectionCard ────────────────────────────────────────────────────────
-//
-// Minimal section header used between entity groups in area views.
-// Transparent — no <ha-card> wrapper, no background of its own.
-//
-// CSS custom properties set on :host propagate to any HA card-shell
-// that wraps the element and reads those variables for its own rendering.
 
 class SavantSectionCard extends HTMLElement {
   set hass(_) {}
-
-  setConfig(config) {
-    this._config = config;
-    this._render();
-  }
-
+  setConfig(config) { this._config = config; this._render(); }
   getCardSize() { return 1; }
 
   _render() {
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     const { title = '', count = 0 } = this._config ?? {};
-
     this.shadowRoot.innerHTML = `
       <style>
         :host {
           display: block;
-          --ha-card-background:    transparent;
-          --ha-card-box-shadow:    none;
-          --ha-card-border-width:  0px;
-          --ha-card-border-color:  transparent;
+          --ha-card-background:   transparent;
+          --ha-card-box-shadow:   none;
+          --ha-card-border-width: 0px;
+          --ha-card-border-color: transparent;
         }
         .sv-section {
-          display: flex; align-items: center; gap: 10px;
-          padding: 8px 2px 2px;
+          display: flex; align-items: center; gap: 10px; padding: 8px 2px 2px;
         }
         .sv-section-title {
           font-family: var(--ha-font-family, 'DM Sans', sans-serif);
-          font-size: 10px; font-weight: 300;
-          text-transform: uppercase; letter-spacing: 0.1em;
-          color: var(--secondary-text-color);
+          font-size: 10px; font-weight: 300; text-transform: uppercase;
+          letter-spacing: 0.1em; color: var(--secondary-text-color);
           white-space: nowrap; opacity: 0.7;
         }
         .sv-section-rule {
@@ -495,8 +398,7 @@ class SavantSectionCard extends HTMLElement {
         .sv-section-count {
           font-family: var(--ha-font-family, 'DM Sans', sans-serif);
           font-size: 10px; font-weight: 300;
-          color: var(--disabled-text-color, #3E3E48);
-          white-space: nowrap;
+          color: var(--disabled-text-color, #3E3E48); white-space: nowrap;
         }
       </style>
       <div class="sv-section">
@@ -511,12 +413,9 @@ class SavantSectionCard extends HTMLElement {
 // ─── Card builders ────────────────────────────────────────────────────────────
 
 const buildLightCards = entities => ({
-  type: 'grid',
-  square: false,
-  columns: 2,
+  type: 'grid', square: false, columns: 2,
   cards: entities.map(e => ({
-    type: 'tile',
-    entity: e.entity_id,
+    type: 'tile', entity: e.entity_id,
     features: [{ type: 'light-brightness' }],
   })),
 });
@@ -528,20 +427,15 @@ const buildMediaCards = entities =>
   entities.map(e => ({ type: 'media-control', entity: e.entity_id }));
 
 const buildCoverCards = entities => ({
-  type: 'grid',
-  square: false,
-  columns: 2,
+  type: 'grid', square: false, columns: 2,
   cards: entities.map(e => ({
-    type: 'tile',
-    entity: e.entity_id,
+    type: 'tile', entity: e.entity_id,
     features: [{ type: 'cover-open-close' }],
   })),
 });
 
 const buildTileGrid = (entities, columns = 2) => ({
-  type: 'grid',
-  square: false,
-  columns,
+  type: 'grid', square: false, columns,
   cards: entities.map(e => ({ type: 'tile', entity: e.entity_id })),
 });
 
@@ -552,37 +446,26 @@ const generateHomeView = config => ({
     type: 'custom:savant-home-card',
     areas:               config.areas,
     entityMap:           config.entityMap,
-    scenes:              config.userConfig?.scenes,
-    scene_entities:      config.userConfig?.scene_entities,
-    indoor_temp_entity:  config.userConfig?.indoor_temp_entity,
-    outdoor_temp_entity: config.userConfig?.outdoor_temp_entity,
+    scenes:              config.scenes,
+    scene_entities:      config.scene_entities,
+    indoor_temp_entity:  config.indoor_temp_entity,
+    outdoor_temp_entity: config.outdoor_temp_entity,
   }],
 });
 
 const generateAreaView = (config, hass) => {
-  const { area, entities: entityReg, devices: deviceReg } = config;
-  const areaEntities = getAreaEntities(area.area_id, entityReg, deviceReg);
+  const areaEntities = getAreaEntities(config.area.area_id, config.entities, config.devices);
   const grouped      = groupByDomain(areaEntities);
   const cards        = [];
+  const isVisible    = e => { const s = hass.states[e.entity_id]; return s && s.state !== 'unavailable'; };
 
-  const isVisible = e => {
-    const s = hass.states[e.entity_id];
-    return s && s.state !== 'unavailable';
-  };
-
-  // ── Standard domains (in defined order) ───────────────────────────────────
   for (const domain of DOMAIN_ORDER) {
-    const domainEntities = grouped[domain];
-    if (!domainEntities?.length) continue;
-
-    const visible = domainEntities.filter(isVisible);
+    const visible = (grouped[domain] ?? []).filter(isVisible);
     if (!visible.length) continue;
-
     const label = DOMAIN_LABELS[domain];
     if (!label) continue;
 
     cards.push({ type: 'custom:savant-section-card', title: label, count: visible.length });
-
     switch (domain) {
       case 'light':        cards.push(buildLightCards(visible));      break;
       case 'climate':      cards.push(...buildClimateCards(visible)); break;
@@ -592,27 +475,20 @@ const generateAreaView = (config, hass) => {
     }
   }
 
-  // ── Merged sensors section ─────────────────────────────────────────────────
-  // binary_sensor and sensor share one header so we never get two "Sensors" rows.
-  const sensorEntities = [
+  // Merge binary_sensor + sensor into one section
+  const sensors = [
     ...(grouped['binary_sensor'] ?? []),
     ...(grouped['sensor']        ?? []),
   ].filter(isVisible);
-
-  if (sensorEntities.length) {
-    cards.push({
-      type: 'custom:savant-section-card',
-      title: 'Sensors',
-      count: sensorEntities.length,
-    });
-    cards.push(buildTileGrid(sensorEntities));
+  if (sensors.length) {
+    cards.push({ type: 'custom:savant-section-card', title: 'Sensors', count: sensors.length });
+    cards.push(buildTileGrid(sensors));
   }
 
-  // ── Empty-state fallback ───────────────────────────────────────────────────
   if (cards.length === 0) {
     cards.push({
       type: 'markdown',
-      content: `*No entities assigned to **${area.name}**.*\n\nGo to **Settings → Areas** and assign devices or entities to this area.`,
+      content: `*No entities assigned to **${config.area.name}**.*\n\nGo to **Settings → Areas** and assign devices or entities to this area.`,
     });
   }
 
@@ -620,12 +496,21 @@ const generateAreaView = (config, hass) => {
 };
 
 // ─── SavantDashboardStrategy ──────────────────────────────────────────────────
+//
+// HA strategy API (2021.5+):  static async generate(config, hass)
+// config = the strategy object from the dashboard YAML (minus the type key)
+// hass   = the HA websocket connection
 
 class SavantDashboardStrategy extends HTMLElement {
-  static async generateDashboard(info) {
-    const { hass, config = {} } = info;
 
-    // Fetch the three registries we need in parallel
+  static getCreateSuggestions(_hass) {
+    return {
+      title: 'Savant',
+      icon:  'mdi:home-variant-outline',
+    };
+  }
+
+  static async generate(config, hass) {
     let areas, entities, devices;
     try {
       [areas, entities, devices] = await Promise.all([
@@ -637,8 +522,7 @@ class SavantDashboardStrategy extends HTMLElement {
       console.error('[Savant Strategy] Failed to load registries:', err);
       return {
         views: [{
-          title: 'Error',
-          path: 'home',
+          title: 'Error', path: 'home',
           cards: [{
             type: 'markdown',
             content: `## Savant Strategy — Load Error\n\n\`${err.message}\`\n\nCheck the browser console for details.`,
@@ -651,45 +535,52 @@ class SavantDashboardStrategy extends HTMLElement {
       a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
     );
 
-    // entityMap: area_id → entity registry entries for that area.
-    // Passed to SavantHomeCard so the overview can read live states without
-    // holding a reference to the full entity registry at render time.
+    // Pre-compute entity map once so the home card view doesn't need
+    // to hold the full registries at render time.
     const entityMap = Object.fromEntries(
       sortedAreas.map(a => [a.area_id, getAreaEntities(a.area_id, entities, devices)])
     );
 
-    // shared is spread into every view's strategy config.
-    // Area view strategies need the full registries to resolve entity lists.
-    const shared = { entities, devices, userConfig: config };
+    // User-facing options are passed through config (from dashboard YAML or
+    // create-dialog form). Spread them into every view strategy config.
+    const userOpts = {
+      scenes:              config.scenes,
+      scene_entities:      config.scene_entities,
+      indoor_temp_entity:  config.indoor_temp_entity,
+      outdoor_temp_entity: config.outdoor_temp_entity,
+    };
 
     return {
       views: [
-        // ── Home overview ──────────────────────────────────────────────────
-        // Uses default masonry layout — 'type: panel' conflicts with
-        // strategy-generated views in several HA versions and is avoided.
+        // ── Home overview ────────────────────────────────────────────────
         {
-          title: 'Home',
-          path: 'home',
-          icon: 'mdi:home-variant-outline',
+          title: config.title || 'Home',
+          path:  'home',
+          icon:  'mdi:home-variant-outline',
           strategy: {
-            type: 'custom:savant-view',
+            // 'custom:savant' resolves to ll-strategy-view-savant
+            type: 'custom:savant',
             view: 'home',
             areas: sortedAreas,
             entityMap,
-            ...shared,
+            entities,
+            devices,
+            ...userOpts,
           },
         },
-        // ── One view per area ──────────────────────────────────────────────
+        // ── One view per area ────────────────────────────────────────────
         ...sortedAreas.map(area => ({
           title: area.name,
-          path: area.area_id,
-          icon: area.icon ?? 'mdi:home-outline',
+          path:  area.area_id,
+          icon:  area.icon ?? 'mdi:home-outline',
           strategy: {
-            type: 'custom:savant-view',
+            type: 'custom:savant',
             view: 'area',
             area,
             areas: sortedAreas,
-            ...shared,
+            entities,
+            devices,
+            ...userOpts,
           },
         })),
       ],
@@ -698,35 +589,44 @@ class SavantDashboardStrategy extends HTMLElement {
 }
 
 // ─── SavantViewStrategy ───────────────────────────────────────────────────────
+//
+// HA view strategy API: static async generate(config, hass)
+// Registered as ll-strategy-view-savant → referenced as type: custom:savant
 
 class SavantViewStrategy extends HTMLElement {
-  static async generateView(info) {
-    const { config, hass } = info;
+  static async generate(config, hass) {
     return config.view === 'home'
       ? generateHomeView(config)
       : generateAreaView(config, hass);
   }
 }
 
-// ─── Register ─────────────────────────────────────────────────────────────────
+// ─── Register custom elements ─────────────────────────────────────────────────
 
 [
   ['savant-home-card',             SavantHomeCard],
   ['savant-section-card',          SavantSectionCard],
+  // ll-strategy-dashboard-{name} → dashboard strategy type custom:{name}
   ['ll-strategy-dashboard-savant', SavantDashboardStrategy],
+  // ll-strategy-view-{name}      → view strategy type custom:{name}
   ['ll-strategy-view-savant',      SavantViewStrategy],
 ].forEach(([name, cls]) => {
   if (!customElements.get(name)) customElements.define(name, cls);
 });
 
 // ─── HA 2026.5 UI discovery ───────────────────────────────────────────────────
+//
+// Required fields per developer docs:
+//   type         — strategy identifier (without custom: prefix)
+//   strategyType — must be "dashboard" to appear in the New Dashboard dialog
 
 window.customStrategies ??= [];
 window.customStrategies.push({
+  type:             'savant',
+  strategyType:     'dashboard',
   name:             'Savant',
-  description:      'Luxury home-automation aesthetic inspired by the Savant interface. Auto-generates a view per area with no manual card configuration.',
+  description:      'Luxury home-automation aesthetic. Auto-generates a view per area with no manual card configuration.',
   documentationURL: 'https://github.com/YOUR_USERNAME/savant-ha-strategy',
-  type:             'll-strategy-dashboard-savant',
 });
 
 // ─── Console banner ───────────────────────────────────────────────────────────
